@@ -1,7 +1,4 @@
 Flask
 Flask-CORS
 gunicorn
-numpy
-Pillow
-dlib
-face_recognition
+requests # To make HTTP requests to the Face++ API
