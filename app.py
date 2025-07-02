@@ -22,7 +22,7 @@ FACEPLUSPLUS_API_KEY = os.environ.get("FACEPLUSPLUS_API_KEY")
 FACEPLUSPLUS_API_SECRET = os.environ.get("FACEPLUSPLUS_API_SECRET")
 
 # Set the correct API endpoint URL for your key's region (e.g., 'api-cn' or 'api-us')
-FACEPLUSPLUS_COMPARE_URL = "https://api-cn.faceplusplus.com/compare" 
+FACEPLUSPLUS_COMPARE_URL = "https://api-us.faceplusplus.com/compare" 
 
 # Check if the keys were loaded successfully from the environment
 if not FACEPLUSPLUS_API_KEY or not FACEPLUSPLUS_API_SECRET:
