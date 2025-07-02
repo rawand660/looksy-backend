@@ -1,8 +1,8 @@
-# app.py using Imagga Visual Similarity API (/compare endpoint)
+# app.py using Microsoft Azure Face API
 
 import os
 import random
-import requests # For making API calls
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -12,16 +12,24 @@ load_dotenv()
 app = Flask(__name__, static_folder='static')
 CORS(app)
 
-# --- Configuration for Imagga ---
-IMAGGA_API_KEY = os.environ.get("IMAGGA_API_KEY")
-IMAGGA_API_SECRET = os.environ.get("IMAGGA_API_SECRET")
-# USE THE /compare ENDPOINT
-IMAGGA_COMPARE_URL = "https://api.imagga.com/v2/compare"
+# --- Configuration for Azure Face API ---
+AZURE_API_KEY = os.environ.get("AZURE_API_KEY")
+AZURE_ENDPOINT_URL = os.environ.get("AZURE_ENDPOINT_URL")
 
-if not IMAGGA_API_KEY or not IMAGGA_API_SECRET:
-    print("CRITICAL ERROR: Imagga API Key/Secret not found in environment variables.")
+# We will construct the specific API endpoint paths from the base URL
+if AZURE_ENDPOINT_URL:
+    # Ensure endpoint URL doesn't have a trailing slash
+    base_url = AZURE_ENDPOINT_URL.rstrip('/')
+    AZURE_DETECT_URL = f"{base_url}/face/v1.0/detect"
+    AZURE_VERIFY_URL = f"{base_url}/face/v1.0/verify"
+else:
+    AZURE_DETECT_URL = None
+    AZURE_VERIFY_URL = None
 
-# --- Preloaded face file list setup (no changes needed here) ---
+if not AZURE_API_KEY or not AZURE_ENDPOINT_URL:
+    print("CRITICAL ERROR: Azure API Key/Endpoint URL not found in environment variables.")
+
+# --- Preloaded face file list setup ---
 PRELOADED_FACES_DIR_FOR_LISTING = os.path.join('static', 'preloaded_ai_faces')
 PRELOADED_FACES_URL_BASE = '/static/preloaded_ai_faces'
 preloaded_face_files = []
@@ -31,10 +39,45 @@ if os.path.exists(PRELOADED_FACES_DIR_FOR_LISTING):
 else:
     print(f"WARNING: Preloaded faces directory not found.")
 
+def get_face_id(image_data, api_key, detect_url):
+    """Helper function to call Azure Detect API and get a faceId."""
+    if not detect_url or not api_key:
+        return None, "AI service endpoint or key not configured."
+    
+    headers = {'Ocp-Apim-Subscription-Key': api_key, 'Content-Type': 'application/octet-stream'}
+    # Parameters to request faceId and some attributes if needed in the future
+    params = {'returnFaceId': 'true', 'returnFaceLandmarks': 'false', 'recognitionModel': 'recognition_04'}
+    
+    try:
+        response = requests.post(detect_url, params=params, headers=headers, data=image_data)
+        response.raise_for_status() # Raise exception for bad status codes
+        
+        detected_faces = response.json()
+        print(f"Azure Detect API response: {detected_faces}")
+        
+        if not detected_faces:
+            return None, "No face detected in the image."
+            
+        # Return the first faceId found
+        return detected_faces[0]['faceId'], None
+    except requests.exceptions.HTTPError as http_err:
+        # Try to get more specific error from Azure response
+        try:
+            error_details = http_err.response.json().get('error', {})
+            error_message = error_details.get('message', str(http_err))
+        except:
+            error_message = str(http_err)
+        print(f"HTTP Error during face detection: {error_message}")
+        return None, f"AI Service Error: {error_message}"
+    except Exception as e:
+        print(f"Unexpected error during face detection: {e}")
+        return None, "An unexpected error occurred during face detection."
+
+
 @app.route('/analyze-face', methods=['POST'])
 def analyze_face():
-    print("\n--- /analyze-face HIT! (Imagga /compare version) ---")
-    if not IMAGGA_API_KEY or not IMAGGA_API_SECRET:
+    print("\n--- /analyze-face HIT! (Azure Face API version) ---")
+    if not AZURE_API_KEY or not AZURE_VERIFY_URL or not AZURE_DETECT_URL:
         return jsonify({'error': 'AI service is not configured correctly.'}), 503
     if 'user_image' not in request.files:
         return jsonify({'error': 'No image file provided'}), 400
@@ -51,33 +94,34 @@ def analyze_face():
     print(f"User image: {user_image_file.filename}, Match image: {match_image_filename}")
 
     try:
-        # Prepare the multipart/form-data request for /compare
-        files_payload = {
-            'image1': user_image_file.read(),
-            'image2': open(match_image_full_path, 'rb'),
-        }
-        
-        # Make the API call to the /compare endpoint
-        response = requests.post(
-            IMAGGA_COMPARE_URL,
-            files=files_payload,
-            auth=(IMAGGA_API_KEY, IMAGGA_API_SECRET)
-        )
-        
-        response.raise_for_status() # Raise exception for 4xx/5xx errors
-        api_data = response.json()
-        print(f"Imagga Compare API Response: {api_data}")
+        user_image_data = user_image_file.read()
+        with open(match_image_full_path, 'rb') as f:
+            match_image_data = f.read()
 
-        # Check for errors returned from Imagga
-        if api_data.get('status', {}).get('type') != 'success':
-            error_msg = api_data.get('status', {}).get('text', 'Unknown AI API error')
-            # The /compare endpoint doesn't have a specific "no face" error, it just compares images.
-            # So we rely on a general error check.
-            return jsonify({'error': f"AI API Error: {error_msg}"}), 400
+        # Step 1: Get faceId for the user's image
+        user_face_id, error = get_face_id(user_image_data, AZURE_API_KEY, AZURE_DETECT_URL)
+        if error:
+            return jsonify({'error': error}), 400
         
-        # Extract similarity score
-        # The /compare endpoint returns a 'percent' score from 0-100
-        similarity_score = api_data.get('result', {}).get('percent', 0)
+        # Step 2: Get faceId for the match image
+        match_face_id, error = get_face_id(match_image_data, AZURE_API_KEY, AZURE_DETECT_URL)
+        if error:
+            print(f"Could not detect face in preloaded image {match_image_filename}. This is a server-side data issue.")
+            return jsonify({'error': 'Error analyzing library image.'}), 500
+
+        # Step 3: Call Verify API to compare the two faceIds
+        print(f"Verifying faceId1: {user_face_id} against faceId2: {match_face_id}")
+        headers = {'Ocp-Apim-Subscription-Key': AZURE_API_KEY, 'Content-Type': 'application/json'}
+        payload = {'faceId1': user_face_id, 'faceId2': match_face_id}
+        
+        response = requests.post(AZURE_VERIFY_URL, json=payload, headers=headers)
+        response.raise_for_status()
+        api_data = response.json()
+        print(f"Azure Verify API Response: {api_data}")
+
+        # 'confidence' score is 0-1, where higher means more likely to be the same person.
+        # 'isIdentical' is a boolean based on a default threshold.
+        similarity_score = round(api_data.get('confidence', 0) * 100)
 
         # Prepare our app's response
         match_image_url = f"{PRELOADED_FACES_URL_BASE}/{match_image_filename}"
@@ -87,13 +131,13 @@ def analyze_face():
         response_data = {
             'match_name': fake_name,
             'match_image_url': match_image_url,
-            'similarity_score': round(similarity_score),
+            'similarity_score': similarity_score,
             'match_insta': None 
         }
         return jsonify(response_data), 200
 
     except requests.exceptions.RequestException as e:
-        print(f"Error calling Imagga API: {e}")
+        print(f"Error calling Azure API: {e}")
         return jsonify({'error': 'Could not connect to AI analysis service.'}), 503
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -101,7 +145,7 @@ def analyze_face():
 
 @app.route('/')
 def hello_world():
-    return "Looksy AI Backend (Imagga /compare version) is running!"
+    return "Looksy AI Backend (Azure Face API version) is running!"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5001, debug=True)
