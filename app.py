@@ -1,4 +1,4 @@
-# app.py using Microsoft Azure Face API (with multipart/form-data upload)
+# app.py using Microsoft Azure Face API (with explicit URL parameters)
 
 import os
 import random
@@ -40,22 +40,30 @@ else:
 
 
 def get_face_id(image_data_stream, api_key, detect_url, filename_for_debug="image"):
-    """Helper function to call Azure Detect API and get a faceId using a file stream."""
+    """Helper function to call Azure Detect API and get a faceId with explicit URL params."""
     if not detect_url or not api_key:
         return None, "AI service endpoint or key not configured."
     
-    # When sending a file stream via `files` param, Content-Type is multipart/form-data.
-    # We only need to provide the subscription key in the headers.
-    headers = {'Ocp-Apim-Subscription-Key': api_key}
-    params = {'returnFaceId': 'true', 'returnFaceLandmarks': 'false', 'recognitionModel': 'recognition_04'}
+    # --- KEY CHANGE: Build the full URL with parameters manually ---
+    # This makes it absolutely clear what URL we are requesting.
+    request_url = f"{detect_url}?returnFaceId=true&returnFaceLandmarks=false&recognitionModel=recognition_04"
+    
+    headers = {
+        'Ocp-Apim-Subscription-Key': api_key,
+        # When using the 'files' parameter, 'requests' will automatically set
+        # the Content-Type to multipart/form-data, so we don't specify it here.
+    }
     
     # The 'files' parameter takes a dictionary. 'image' is the required key for this API.
-    # We pass the image data as a file-like object.
     files = {'image': image_data_stream}
     
     try:
         print(f"--- Calling Azure Detect for {filename_for_debug} ---")
-        response = requests.post(detect_url, params=params, headers=headers, files=files)
+        print(f"--- Request URL: {request_url} ---") # Log the exact URL being called
+        
+        # --- KEY CHANGE: Remove the 'params' argument from the call ---
+        response = requests.post(request_url, headers=headers, files=files)
+        
         response.raise_for_status() # Raise exception for bad status codes (4xx or 5xx)
         
         detected_faces = response.json()
@@ -74,6 +82,9 @@ def get_face_id(image_data_stream, api_key, detect_url, filename_for_debug="imag
             error_message = str(http_err)
         print(f"HTTP Error during face detection for {filename_for_debug}: {error_message}")
         
+        # Re-check the error message
+        if 'Invalid request has been sent' in error_message:
+            return None, "Invalid request sent to AI service. Please check image or configuration."
         if 'InvalidImageSize' in error_message or 'InvalidImageFormat' in error_message:
             return None, "Invalid image format or size. Please use a clear JPG or PNG under 6MB."
         return None, f"AI Service Error: {error_message}"
@@ -90,7 +101,7 @@ def analyze_face():
     if 'user_image' not in request.files:
         return jsonify({'error': 'No image file provided'}), 400
     
-    user_image_file = request.files['user_image'] # This is a FileStorage object
+    user_image_file = request.files['user_image']
     
     if not preloaded_face_files:
         return jsonify({'error': 'No preloaded faces available for matching'}), 500
