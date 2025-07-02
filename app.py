@@ -12,7 +12,7 @@ CORS(app)
 # IMPORTANT: Store these securely, e.g., as environment variables on Render
 FACEPLUSPLUS_API_KEY = "QPZqehIqlPTcxG26xoUI1jBlMRaw6D4f"
 FACEPLUSPLUS_API_SECRET = "qdIvd16PRPk_3ofhEtXeuMG788X9bGvH"
-FACEPLUSPLUS_COMPARE_URL = "https://api-us.faceplusplus.com/compare"
+FACEPLUSPLUS_COMPARE_URL = "https://api-cn.faceplusplus.com/compare"
 
 PRELOADED_FACES_DIR_FOR_LISTING = os.path.join('static', 'preloaded_ai_faces')
 PRELOADED_FACES_URL_BASE = '/static/preloaded_ai_faces'
