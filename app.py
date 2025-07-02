@@ -1,3 +1,19 @@
+# In app.py
+from flask import Flask, ...
+import os
+from dotenv import load_dotenv # <<< ADD THIS IMPORT
+
+load_dotenv() # <<< ADD THIS LINE to load variables from .env file
+
+# Now, get the secrets from the environment
+FACEPLUSPLUS_API_KEY = os.environ.get("FACEPLUSPLUS_API_KEY")
+FACEPLUSPLUS_API_SECRET = os.environ.get("FACEPLUSPLUS_API_SECRET")
+FACEPLUSPLUS_COMPARE_URL = "https://api-cn.faceplusplus.com/compare" # Or your correct region
+
+# Check if keys were loaded
+if not FACEPLUSPLUS_API_KEY or not FACEPLUSPLUS_API_SECRET:
+    print("CRITICAL ERROR: Face++ API Key/Secret not found in environment.")
+    # You might want to exit or handle this error gracefully
 # app.py using Face++ API
 from flask import Flask, request, jsonify
 from flask_cors import CORS
