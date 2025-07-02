@@ -1,4 +1,5 @@
 Flask
 Flask-CORS
 gunicorn
-requests # To make HTTP requests to the Face++ API
+requests
+python-dotenv

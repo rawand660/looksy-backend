@@ -1,1 +1,12 @@
+# Virtual Environment
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Secrets file
 .env
+
+# Uploads folder (if you don't want to track user uploads)
+uploads/
