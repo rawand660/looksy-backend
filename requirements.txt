@@ -1,5 +1,9 @@
 Flask
 Flask-CORS
-gunicorn
+waitress  
+numpy
+Pillow
+dlib
+face_recognition
 requests
 python-dotenv
