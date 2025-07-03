@@ -1,4 +1,4 @@
-# app.py using face_recognition with on-demand caching
+# app.py using face_recognition with corrected similarity calculation
 
 import os
 import random
@@ -12,26 +12,23 @@ load_dotenv()
 app = Flask(__name__, static_folder='static')
 CORS(app)
 
+AI_AVAILABLE = False
 try:
     import face_recognition
     import numpy as np
     from PIL import Image
-    print("AI libraries imported successfully.")
+    print("AI libraries (face_recognition, numpy) imported successfully.")
     AI_AVAILABLE = True
 except Exception as e:
     print(f"!!!!!!!!!! CRITICAL ERROR IMPORTING AI LIBRARIES: {e} !!!!!!!!!!!")
-    AI_AVAILABLE = False
 
-# --- Configuration ---
+preloaded_face_encodings_cache = {}
+is_cache_loaded = False
+
 PRELOADED_FACES_DIR = os.path.join('static', 'preloaded_ai_faces')
 PRELOADED_FACES_URL_BASE = '/static/preloaded_ai_faces'
 
-# --- In-Memory Cache (will be populated on the first request) ---
-preloaded_face_encodings_cache = {} # { 'filename.jpg': encoding_vector, ... }
-is_cache_loaded = False # A flag to check if we've loaded the cache yet
-
 def load_and_cache_all_encodings_if_needed():
-    """Function to populate the cache if it hasn't been loaded yet."""
     global preloaded_face_encodings_cache, is_cache_loaded
     if is_cache_loaded or not AI_AVAILABLE:
         return
@@ -39,6 +36,7 @@ def load_and_cache_all_encodings_if_needed():
     print("--- First request: Loading and caching all preloaded face encodings... ---")
     if not os.path.exists(PRELOADED_FACES_DIR):
         print(f"WARNING: Preloaded faces directory not found: {PRELOADED_FACES_DIR}")
+        is_cache_loaded = True
         return
 
     valid_image_files = [f for f in os.listdir(PRELOADED_FACES_DIR) if '.' in f and f.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg', 'jfif'}]
@@ -56,15 +54,13 @@ def load_and_cache_all_encodings_if_needed():
         except Exception as e:
             print(f"Error caching encoding for {filename}: {e}")
 
-    is_cache_loaded = True # Set the flag so we don't do this again
+    is_cache_loaded = True
     print(f"Finished caching. {len(preloaded_face_encodings_cache)} encodings cached.")
-
 
 @app.route('/analyze-face', methods=['POST'])
 def analyze_face():
     print("\n--- /analyze-face HIT! ---")
     
-    # --- KEY CHANGE: Load the cache on the first request ---
     if not is_cache_loaded:
         load_and_cache_all_encodings_if_needed()
 
@@ -91,19 +87,22 @@ def analyze_face():
         user_encoding = user_encodings[0]
         print("User encoding generated.")
 
-        # Compare against the now-populated cache
         known_encodings = list(preloaded_face_encodings_cache.values())
         filenames = list(preloaded_face_encodings_cache.keys())
-        
         face_distances = face_recognition.face_distance(known_encodings, user_encoding)
 
         matches = []
         for i, distance in enumerate(face_distances):
-            similarity_score = int(max(0, (1 - (distance / 0.75))) * 100)
-            similarity_score = min(max(similarity_score, 40), 99)
+            # --- CORRECTED SIMILARITY CALCULATION ---
+            # Linear mapping: distance 0.0 -> ~99%, distance 0.6 -> ~63%, distance 1.0 -> ~39%
+            similarity_score = 99 - (distance * 60)
+            
+            # Clamp the score to our desired demo range of 40-99
+            similarity_score = int(min(max(similarity_score, 40), 99))
+            
             matches.append({'filename': filenames[i], 'distance': distance, 'similarity_score': similarity_score})
         
-        sorted_matches = sorted(matches, key=lambda x: x['distance'])
+        sorted_matches = sorted(matches, key=lambda x: x['distance']) # Sort by distance (lower is better)
         print(f"Found {len(sorted_matches)} potential matches, sorted by distance.")
 
         if not sorted_matches:
@@ -132,9 +131,6 @@ def analyze_face():
 def hello_world():
     return "Looksy AI Backend (face_recognition/lazy-load) is running!"
 
-# We no longer call load_and_cache... at the global level.
-# The `if __name__ == '__main__':` block is only for local testing.
-# Gunicorn will directly use the 'app' object.
 if __name__ == '__main__':
     print("--- Starting Flask App for LOCAL development ---")
     app.run(host='0.0.0.0', port=5001, debug=True)
