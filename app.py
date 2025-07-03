@@ -1,4 +1,4 @@
-# app.py using face_recognition with corrected similarity calculation
+# app.py with more generous similarity score mapping for demos
 
 import os
 import random
@@ -17,7 +17,7 @@ try:
     import face_recognition
     import numpy as np
     from PIL import Image
-    print("AI libraries (face_recognition, numpy) imported successfully.")
+    print("AI libraries imported successfully.")
     AI_AVAILABLE = True
 except Exception as e:
     print(f"!!!!!!!!!! CRITICAL ERROR IMPORTING AI LIBRARIES: {e} !!!!!!!!!!!")
@@ -93,16 +93,24 @@ def analyze_face():
 
         matches = []
         for i, distance in enumerate(face_distances):
-            # --- CORRECTED SIMILARITY CALCULATION ---
-            # Linear mapping: distance 0.0 -> ~99%, distance 0.6 -> ~63%, distance 1.0 -> ~39%
-            similarity_score = 99 - (distance * 60)
+            print(f"Comparing with {filenames[i]}, distance: {distance:.4f}")
+
+            # --- MORE GENEROUS SIMILARITY MAPPING FOR DEMO ---
+            if distance < 0.4:
+                # Good matches get scores from 90-99
+                similarity_score = 99 - (distance / 0.4) * 9
+            else:
+                # For other distances, scale them between 50 and 90
+                # This ensures even a "bad" match (distance ~1.0) gets a score of 50
+                similarity_score = 90 - ((distance - 0.4) / 0.6) * 40
             
-            # Clamp the score to our desired demo range of 40-99
+            # Final clamp to ensure score is within 40-99 range
             similarity_score = int(min(max(similarity_score, 40), 99))
             
+            print(f" -> Mapped similarity score: {similarity_score}%")
             matches.append({'filename': filenames[i], 'distance': distance, 'similarity_score': similarity_score})
         
-        sorted_matches = sorted(matches, key=lambda x: x['distance']) # Sort by distance (lower is better)
+        sorted_matches = sorted(matches, key=lambda x: x['distance'])
         print(f"Found {len(sorted_matches)} potential matches, sorted by distance.")
 
         if not sorted_matches:
